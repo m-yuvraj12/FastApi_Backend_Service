@@ -117,6 +117,4 @@ alembic upgrade head && uvicorn app.main:app --reload
 - **502 SenderId mismatch** – the Android app's `google-services.json` and the service-account key must come from the *same* Firebase project.
 - **No notification on device** – grant the notification permission (Android 13+), and use an emulator image *with Google Play*.
 
-## Demo video checklist
-1. Project structure (tree above) → 2. register/login/Authorize → 3. `models.py` + `migrations/` + `alembic upgrade head` in the container log
-→ 4. `PUT /devices`, `POST /notifications/send` in Swagger → 5. phone receiving it → 6. `psql` select showing the row → 7. `GET /notifications`.
+
