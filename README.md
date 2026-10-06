@@ -13,19 +13,27 @@ Swagger UI ──JWT──▶ FastAPI ──▶ PostgreSQL (users, devices, noti
 
 ```
 app/
-  main.py            app factory, router wiring, error handler, /health
-  config.py          env-driven settings (pydantic-settings)
-  database.py        engine, session, Base (with constraint naming convention)
-  models.py          User, Device, Notification
-  schemas.py         request/response models + validation
-  security.py        bcrypt hashing, JWT create/decode
-  deps.py            get_current_user (Bearer auth dependency)
-  routers/           auth.py · devices.py · notifications.py
-  services/fcm.py    Firebase Admin wrapper
-migrations/          Alembic (versions/0001_initial_schema.py)
-tests/               pytest suite (FCM mocked)
-docker-compose.yml   api + postgres        Dockerfile / docker-entrypoint.sh
+  main.py              app wiring + global error handlers
+  config.py            env-driven settings (pydantic-settings)
+  database.py          engine, session, Base (constraint naming convention)
+  models.py            User, Device, Notification
+  schemas.py           request/response models + validation
+  exceptions.py        domain errors (AppError subclasses -> HTTP status)
+  security.py          bcrypt hashing, JWT create/decode
+  deps.py              get_current_user (Bearer auth dependency)
+  routers/             HTTP layer ONLY: auth · devices · notifications · health
+  services/            business logic: auth_service · device_service ·
+                       notification_service · fcm (Firebase wrapper)
+  repositories/        ALL database queries: user_repo · device_repo ·
+                       notification_repo · health_repo
+migrations/            Alembic (versions/0001_initial_schema.py)
+tests/                 pytest suite (FCM mocked, 16 tests)
+docker-compose.yml     api + postgres        Dockerfile / docker-entrypoint.sh
 ```
+
+**Layering:** `router → service → repository → database`. Routers parse/validate HTTP and return
+responses; services hold the rules (e.g. "persist only after FCM accepts"); repositories are the only
+code that touches SQLAlchemy queries.
 
 ### Data model
 | Table | Purpose | Key columns |
@@ -101,6 +109,27 @@ curl localhost:8000/notifications -H "Authorization: Bearer $TOKEN"
 | GET | `/notifications/{id}` | ✔ | 404 if not yours |
 
 Stale tokens (FCM `UNREGISTERED`) are removed from `devices` automatically.
+
+## Error handling
+Every error is returned as `{"detail": "..."}`. Domain errors (`app/exceptions.py`) are raised by services and
+converted centrally in `main.py`; internals are logged server-side, never leaked to the client.
+
+| Situation | Status |
+|---|---|
+| Duplicate email (incl. concurrent race) | 409 |
+| Invalid email / short password / blank title or body / bad query params | 422 |
+| Wrong credentials · missing/expired/tampered JWT | 401 |
+| Inactive user | 403 |
+| No registered device and no `device_token` | 400 |
+| Notification or device not found / belongs to someone else | 404 |
+| FCM rejects the message · FCM unreachable | 502 (nothing saved) |
+| Firebase key not configured | 503 |
+| Push sent but DB save failed | 500 (FCM ids logged for reconciliation) |
+| Database error · any unhandled exception | 500 generic message |
+| `/health` when the database is down | 503 |
+
+Partial multi-device failures return **201** with `delivered_count` and `failed_count`; tokens FCM reports as
+unregistered are removed automatically (`removed_stale_devices`).
 
 ## Tests / local dev without Docker
 ```bash
