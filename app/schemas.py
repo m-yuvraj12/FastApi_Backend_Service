@@ -77,3 +77,8 @@ class NotificationList(BaseModel):
     limit: int
     offset: int
     items: list[NotificationOut]
+
+
+class NotificationSendOut(NotificationOut):
+    failed_count: int = Field(description="Devices FCM rejected in this request")
+    removed_stale_devices: int = Field(description="Unregistered tokens auto-removed")
